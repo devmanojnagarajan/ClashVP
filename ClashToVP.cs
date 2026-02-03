@@ -5,7 +5,7 @@ using Autodesk.Navisworks.Api;
 using Autodesk.Navisworks.Api.Plugins;
 using Autodesk.Navisworks.Api.Clash;
 using Autodesk.Navisworks.Api.ComApi;
-using ComApi = Autodesk.Navisworks.Interop.ComApi;
+using ComApi = Autodesk.Navisworks.Api.Interop.ComApi;
 
 // Resolves 'Application' ambiguity between Navisworks and WinForms
 using NavisApp = Autodesk.Navisworks.Api.Application;
