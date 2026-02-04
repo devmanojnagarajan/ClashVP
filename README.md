@@ -1,8 +1,10 @@
 # ClashVP
 
-## Quick Start — Create Sectioned Clash Viewpoints
+## Quick Start â€” Create Sectioned Clash Viewpoints
 
 This project provides a Navisworks Add-In (`Clash VP - Section`) that automates the process of creating sectioned viewpoints for clash detection. The add-in performs the following tasks: selecting the first clashing item, placing a horizontal section plane at its center, zooming to it, highlighting the items, and saving a viewpoint.
+<img width="713" height="123" alt="image" src="https://github.com/user-attachments/assets/59b82cd6-1a58-4bbe-881f-0a26659b2082" />
+<img width="713" height="123" alt="image" src="https://github.com/user-attachments/assets/59b82cd6-1a58-4bbe-881f-0a26659b2082" />
 
 ### Prerequisites
 - Navisworks with Clash Detective enabled and a loaded model.
@@ -24,14 +26,20 @@ This project provides a Navisworks Add-In (`Clash VP - Section`) that automates 
      - Select Item1 and center a horizontal section plane on the item's bounding-box center (Z).
      - Zoom to the selection and save a viewpoint.
    - Saved viewpoints are organized into a folder named `Clash VP_[TestName]_[yyyyMMdd_HHmm]` in the Saved Viewpoints section.
+<img width="1165" height="129" alt="image" src="https://github.com/user-attachments/assets/6892d88e-4b84-42c0-af90-ac6086971926" />
+<img width="1165" height="129" alt="image" src="https://github.com/user-attachments/assets/6892d88e-4b84-42c0-af90-ac6086971926" />
 
 4. **Verify the saved viewpoint**
    - Open the Saved Viewpoints window and expand the `Clash VP_...` folder.
    - Double-click any saved viewpoint to load it and confirm that the section plane and zoom are correct.
+<img width="274" height="95" alt="image" src="https://github.com/user-attachments/assets/8e535207-e850-40d8-a261-10be31380297" />
+<img width="274" height="95" alt="image" src="https://github.com/user-attachments/assets/8e535207-e850-40d8-a261-10be31380297" />
 
 5. **Sectioning control**
    - The plugin enables sectioning to place the plane and then disables it after saving the viewpoint.
    - To enable or disable sectioning manually, use the View > Sectioning tools in Navisworks.
+<img width="943" height="698" alt="image" src="https://github.com/user-attachments/assets/cef2d569-bd18-419b-9f0e-825e8c7775cd" />
+<img width="943" height="698" alt="image" src="https://github.com/user-attachments/assets/cef2d569-bd18-419b-9f0e-825e8c7775cd" />
 
 ### Troubleshooting
 - **Duplicate type/attribute compiler errors**: Ensure there are no duplicate `.cs` files or duplicated type definitions in the project. Only one `ClashToVP.cs` should define `ClashIsolateSectionPlugin`, `ClashHelper`, and `ProgressForm`.
