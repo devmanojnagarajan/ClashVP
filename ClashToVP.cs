@@ -10,20 +10,19 @@ using ComApi = Autodesk.Navisworks.Api.Interop.ComApi;
 
 using NavisApp = Autodesk.Navisworks.Api.Application;
 using NavisColor = Autodesk.Navisworks.Api.Color;
-using NavisView = Autodesk.Navisworks.Api.View;
 
 namespace ClashToVP
 {
     // ═══════════════════════════════════════════════════════════════════════════
     // CLASH TO VIEWPOINT PLUGIN
-    // Places section box directly at the clash point (shows plane axis)
-    // Zooms tightly to clash items, marks with RED color
-    // Folder: "Clash VP_[test]_[date]"
+    // 1. Place section plane at middle of FIRST clashing item
+    // 2. Zoom to it
+    // 3. Highlight it (RED color)
     // ═══════════════════════════════════════════════════════════════════════════
     [PluginAttribute("ClashToVP.IsolateSection", "ADSK",
         DisplayName = "Clash VP - Section",
-        ToolTip = "Section Box at Clash Point",
-        ExtendedToolTip = "Places section box directly at clash point, clash items colored RED")]
+        ToolTip = "Section at Item1 + Zoom + Highlight",
+        ExtendedToolTip = "Section plane at middle of first clash item, zoom, highlight RED")]
     [AddInPluginAttribute(AddInLocation.AddIn,
         Icon = "PluginIcon16.png",
         LargeIcon = "PluginIcon32.png")]
@@ -129,9 +128,10 @@ namespace ClashToVP
                 catch (Exception ex) { DebugLog("Error: " + ex.Message); }
             }
 
-            // Cleanup - Disable section planes
-            ClashHelper.DisableSectionPlanes(doc, comState);
+            // Cleanup
+            ClashHelper.DisableSectioning(comState);
             doc.CurrentSelection.Clear();
+            doc.Models.ResetAllPermanentMaterials();
 
             if (progressForm != null) { progressForm.Close(); progressForm = null; }
             MessageBox.Show($"Complete!\n\nSuccess: {successCount} / {total}\n\nFolder: {folderName}");
@@ -139,58 +139,66 @@ namespace ClashToVP
 
         private void ProcessClash(Document doc, ComApi.InwOpState10 comState, GroupItem folder, ClashResult result, int index)
         {
-            DebugLog("  -> Collecting items...");
+            DebugLog("  -> Getting clash items...");
             ModelItem item1 = result.Item1;
             ModelItem item2 = result.Item2;
-            if (item1 == null && item2 == null) return;
 
-            ModelItemCollection clashItems = new ModelItemCollection();
-            if (item1 != null) clashItems.Add(item1);
-            if (item2 != null) clashItems.Add(item2);
+            if (item1 == null)
+            {
+                DebugLog("  -> Item1 is null, skipping...");
+                return;
+            }
 
-            BoundingBox3D bbox = ClashHelper.GetBoundingBox(clashItems);
-            if (bbox == null || bbox.IsEmpty) return;
+            // Get bounding box of FIRST item (Item1)
+            BoundingBox3D item1BBox = item1.BoundingBox();
+            if (item1BBox == null || item1BBox.IsEmpty)
+            {
+                DebugLog("  -> Item1 bounding box is empty, skipping...");
+                return;
+            }
 
-            // Get the exact clash point (center of the bounding box of clashing items)
-            Point3D clashPoint = bbox.Center;
-            DebugLog($"  -> Clash point: X={clashPoint.X:F3}, Y={clashPoint.Y:F3}, Z={clashPoint.Z:F3}");
+            // Get center point of Item1 - this is where we place the section plane
+            Point3D item1Center = item1BBox.Center;
+            DebugLog($"  -> Item1 center: X={item1Center.X:F3}, Y={item1Center.Y:F3}, Z={item1Center.Z:F3}");
 
-            // Color clash items RED
-            DebugLog("  -> Coloring items...");
-            ClashHelper.ColorItems(doc, item1, item2);
+            // STEP 1: Highlight Item1 with RED color
+            DebugLog("  -> Highlighting Item1 RED...");
+            ModelItemCollection itemsToHighlight = new ModelItemCollection();
+            itemsToHighlight.Add(item1);
+            if (item2 != null) itemsToHighlight.Add(item2);
+            doc.Models.OverridePermanentColor(itemsToHighlight, new NavisColor(1.0, 0.0, 0.0));
 
-            // Select clash items
-            DebugLog("  -> Selecting clash items...");
+            // STEP 2: Select Item1 for zoom
+            DebugLog("  -> Selecting Item1...");
             doc.CurrentSelection.Clear();
-            doc.CurrentSelection.CopyFrom(clashItems);
+            doc.CurrentSelection.Add(item1);
             System.Windows.Forms.Application.DoEvents();
 
-            // Create section BOX centered exactly at the clash point
-            // This positions the section plane origin/axis right at the clash
-            DebugLog("  -> Creating section box at clash point...");
-            ClashHelper.CreateSectionBoxAtClashPoint(doc, comState, clashPoint, bbox);
+            // STEP 3: Place section plane at the middle of Item1
+            DebugLog("  -> Placing section plane at Item1 center...");
+            ClashHelper.EnableSectioningAtPoint(comState, item1Center, item1BBox);
             System.Windows.Forms.Application.DoEvents();
 
-            // Zoom tightly to the clash point
-            DebugLog("  -> Zooming to clash point...");
-            ClashHelper.ZoomToClashPoint(doc, comState, clashPoint, bbox);
+            // STEP 4: Zoom to Item1
+            DebugLog("  -> Zooming to Item1...");
+            ClashHelper.ZoomToSelection(comState);
             System.Windows.Forms.Application.DoEvents();
 
-            // Save viewpoint
+            // STEP 5: Save the viewpoint
             DebugLog("  -> Saving viewpoint...");
             ClashHelper.SaveViewpoint(doc, folder, "Clash " + index + " - " + result.DisplayName);
 
             // Reset for next clash
             DebugLog("  -> Resetting for next...");
-            ClashHelper.DisableSectionPlanes(doc, comState);
-            doc.Models.ResetPermanentMaterials(clashItems);
+            ClashHelper.DisableSectioning(comState);
+            doc.Models.ResetPermanentMaterials(itemsToHighlight);
             doc.CurrentSelection.Clear();
             System.Windows.Forms.Application.DoEvents();
         }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // HELPER CLASS - Shared functionality
+    // HELPER CLASS
     // ═══════════════════════════════════════════════════════════════════════════
     public static class ClashHelper
     {
@@ -249,111 +257,11 @@ namespace ClashToVP
             return doc.SavedViewpoints.Value[doc.SavedViewpoints.Value.Count - 1] as GroupItem;
         }
 
-        public static BoundingBox3D GetBoundingBox(ModelItemCollection items)
-        {
-            bool init = false;
-            double minX = 0, minY = 0, minZ = 0, maxX = 0, maxY = 0, maxZ = 0;
-            foreach (ModelItem item in items)
-            {
-                BoundingBox3D b = item.BoundingBox();
-                if (b != null && !b.IsEmpty)
-                {
-                    if (!init)
-                    {
-                        minX = b.Min.X; minY = b.Min.Y; minZ = b.Min.Z;
-                        maxX = b.Max.X; maxY = b.Max.Y; maxZ = b.Max.Z;
-                        init = true;
-                    }
-                    else
-                    {
-                        minX = Math.Min(minX, b.Min.X); minY = Math.Min(minY, b.Min.Y); minZ = Math.Min(minZ, b.Min.Z);
-                        maxX = Math.Max(maxX, b.Max.X); maxY = Math.Max(maxY, b.Max.Y); maxZ = Math.Max(maxZ, b.Max.Z);
-                    }
-                }
-            }
-            return init ? new BoundingBox3D(new Point3D(minX, minY, minZ), new Point3D(maxX, maxY, maxZ)) : null;
-        }
-
-        public static void ColorItems(Document doc, ModelItem item1, ModelItem item2)
-        {
-            ModelItemCollection clashItems = new ModelItemCollection();
-            if (item1 != null) clashItems.Add(item1);
-            if (item2 != null) clashItems.Add(item2);
-
-            if (clashItems.Count > 0)
-            {
-                doc.Models.OverridePermanentColor(clashItems, new NavisColor(1.0, 0.0, 0.0)); // Red
-            }
-        }
-
         /// <summary>
-        /// Creates a section BOX centered exactly at the clash point
-        /// This places the section plane origin/gizmo right at the clash location
-        /// Uses OrientedBox in JSON format which centers the box at the specified coordinates
+        /// Enable sectioning with a single horizontal plane at the center Z of the item
+        /// This places the section plane right through the middle of Item1
         /// </summary>
-        public static void CreateSectionBoxAtClashPoint(Document doc, ComApi.InwOpState10 comState, Point3D clashPoint, BoundingBox3D bbox)
-        {
-            // Calculate box size based on clash bounding box with some padding
-            double sizeX = bbox.Max.X - bbox.Min.X;
-            double sizeY = bbox.Max.Y - bbox.Min.Y;
-            double sizeZ = bbox.Max.Z - bbox.Min.Z;
-
-            // Add padding around the clash (make box slightly larger than clash)
-            double padding = Math.Max(Math.Max(sizeX, sizeY), sizeZ) * 0.5;
-            if (padding < 0.5) padding = 0.5; // Minimum padding
-
-            // Create box centered on clash point
-            double minX = clashPoint.X - (sizeX / 2) - padding;
-            double minY = clashPoint.Y - (sizeY / 2) - padding;
-            double minZ = clashPoint.Z - (sizeZ / 2) - padding;
-            double maxX = clashPoint.X + (sizeX / 2) + padding;
-            double maxY = clashPoint.Y + (sizeY / 2) + padding;
-            double maxZ = clashPoint.Z + (sizeZ / 2) + padding;
-
-            // Try .NET API first with JSON using OrientedBox (section box mode)
-            try
-            {
-                NavisView activeView = doc.ActiveView;
-                if (activeView != null)
-                {
-                    // Use OrientedBox format - this creates a section BOX centered at the clash
-                    // The Box property contains [[minX, minY, minZ], [maxX, maxY, maxZ]]
-                    // Rotation is [0,0,0] for axis-aligned box
-                    string clippingPlanesJson = @"{
-                        ""Type"": ""ClipPlaneSet"",
-                        ""Version"": 1,
-                        ""OrientedBox"": {
-                            ""Type"": ""OrientedBox3D"",
-                            ""Version"": 1,
-                            ""Box"": [[" +
-                                minX.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
-                                minY.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
-                                minZ.ToString(System.Globalization.CultureInfo.InvariantCulture) + "],[" +
-                                maxX.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
-                                maxY.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
-                                maxZ.ToString(System.Globalization.CultureInfo.InvariantCulture) + @"]],
-                            ""Rotation"": [0, 0, 0]
-                        },
-                        ""Enabled"": true
-                    }";
-
-                    activeView.SetClippingPlanes(clippingPlanesJson);
-                    System.Windows.Forms.Application.DoEvents();
-                    return;
-                }
-            }
-            catch { }
-
-            // Fallback to COM API - create 6 planes forming a box around the clash
-            CreateSectionBoxUsingComAPI(comState, minX, minY, minZ, maxX, maxY, maxZ);
-        }
-
-        /// <summary>
-        /// Fallback method using COM API for section box creation
-        /// Creates 6 clipping planes forming a box around the clash point
-        /// </summary>
-        private static void CreateSectionBoxUsingComAPI(ComApi.InwOpState10 comState,
-            double minX, double minY, double minZ, double maxX, double maxY, double maxZ)
+        public static void EnableSectioningAtPoint(ComApi.InwOpState10 comState, Point3D centerPoint, BoundingBox3D bbox)
         {
             if (comState == null) return;
 
@@ -365,73 +273,29 @@ namespace ClashToVP
                 // Clear existing planes
                 while (clipPlanes.Count > 0) clipPlanes.RemovePlane(1);
 
-                // Add 6 planes to form a box around the clash point
+                // Create a single horizontal section plane at the center Z of Item1
+                // This cuts through the middle of the first clashing item
                 // Plane equation: ax + by + cz + d = 0
+                // For horizontal plane at Z = centerZ: 0*x + 0*y + 1*z - centerZ = 0
+                // Normal pointing up (0, 0, 1), d = -centerZ
 
-                // Right plane (+X): normal (-1,0,0), d = maxX
-                AddClipPlane(comState, clipPlanes, -1, 0, 0, maxX);
+                double sectionZ = centerPoint.Z;
 
-                // Left plane (-X): normal (1,0,0), d = -minX
-                AddClipPlane(comState, clipPlanes, 1, 0, 0, -minX);
+                dynamic plane = comState.ObjectFactory(ComApi.nwEObjectType.eObjectType_nwOaClipPlane, null, null);
+                plane.Plane.SetValue(0, 0, 1, -sectionZ);  // Horizontal plane at centerZ
+                plane.Enabled = true;
+                clipPlanes.AddPlane(plane);
 
-                // Back plane (+Y): normal (0,-1,0), d = maxY
-                AddClipPlane(comState, clipPlanes, 0, -1, 0, maxY);
-
-                // Front plane (-Y): normal (0,1,0), d = -minY
-                AddClipPlane(comState, clipPlanes, 0, 1, 0, -minY);
-
-                // Top plane (+Z): normal (0,0,-1), d = maxZ
-                AddClipPlane(comState, clipPlanes, 0, 0, -1, maxZ);
-
-                // Bottom plane (-Z): normal (0,0,1), d = -minZ
-                AddClipPlane(comState, clipPlanes, 0, 0, 1, -minZ);
-
+                // Enable sectioning
                 clipPlanes.Enabled = true;
             }
             catch { }
         }
 
-        private static void AddClipPlane(ComApi.InwOpState10 comState, dynamic clipPlanes,
-            double a, double b, double c, double d)
-        {
-            try
-            {
-                dynamic plane = comState.ObjectFactory(ComApi.nwEObjectType.eObjectType_nwOaClipPlane, null, null);
-                plane.Plane.SetValue(a, b, c, d);
-                plane.Enabled = true;
-                clipPlanes.AddPlane(plane);
-            }
-            catch { }
-        }
-
         /// <summary>
-        /// Disables all section planes
+        /// Disable sectioning
         /// </summary>
-        public static void DisableSectionPlanes(Document doc, ComApi.InwOpState10 comState)
-        {
-            // Try .NET API first
-            try
-            {
-                NavisView activeView = doc.ActiveView;
-                if (activeView != null)
-                {
-                    string disabledJson = @"{
-                        ""Type"": ""ClipPlaneSet"",
-                        ""Version"": 1,
-                        ""Enabled"": false
-                    }";
-
-                    activeView.SetClippingPlanes(disabledJson);
-                    return;
-                }
-            }
-            catch { }
-
-            // Fallback to COM API
-            DisableSectionPlanesComAPI(comState);
-        }
-
-        private static void DisableSectionPlanesComAPI(ComApi.InwOpState10 comState)
+        public static void DisableSectioning(ComApi.InwOpState10 comState)
         {
             if (comState == null) return;
             try
@@ -445,71 +309,16 @@ namespace ClashToVP
         }
 
         /// <summary>
-        /// Zooms tightly to the clash point with a close-up view
-        /// Camera positioned to look at the clash from an isometric angle
+        /// Zoom to the current selection
         /// </summary>
-        public static void ZoomToClashPoint(Document doc, ComApi.InwOpState10 comState, Point3D clashPoint, BoundingBox3D bbox)
+        public static void ZoomToSelection(ComApi.InwOpState10 comState)
         {
-            System.Windows.Forms.Application.DoEvents();
-
-            // Calculate the size of the clash area for determining zoom distance
-            double sizeX = bbox.Max.X - bbox.Min.X;
-            double sizeY = bbox.Max.Y - bbox.Min.Y;
-            double sizeZ = bbox.Max.Z - bbox.Min.Z;
-            double clashSize = Math.Max(Math.Max(sizeX, sizeY), sizeZ);
-
-            // Set a tight zoom distance based on clash size
-            // Use a small multiplier for very close zoom
-            double zoomDistance = Math.Max(clashSize * 2.0, 0.5); // Very close zoom
-
+            if (comState == null) return;
             try
             {
-                // Create viewpoint looking at clash point from isometric angle
-                Viewpoint vp = doc.CurrentViewpoint.ToViewpoint();
-
-                // Camera angles for isometric view (looking down at clash)
-                double angleH = Math.PI / 4;  // 45 degrees horizontal
-                double angleV = Math.PI / 5;  // ~36 degrees vertical (looking down)
-
-                // Position camera at calculated distance from clash point
-                Point3D cameraPos = new Point3D(
-                    clashPoint.X + zoomDistance * Math.Cos(angleH) * Math.Cos(angleV),
-                    clashPoint.Y + zoomDistance * Math.Sin(angleH) * Math.Cos(angleV),
-                    clashPoint.Z + zoomDistance * Math.Sin(angleV)
-                );
-
-                vp.Position = cameraPos;
-                vp.Projection = ViewpointProjection.Perspective;
-
-                // Apply the viewpoint
-                doc.CurrentViewpoint.CopyFrom(vp);
-                System.Windows.Forms.Application.DoEvents();
-
-                // Use ZoomBox on a tight bounding box around the clash for precise framing
-                double padding = clashSize * 0.3;
-                BoundingBox3D tightBox = new BoundingBox3D(
-                    new Point3D(clashPoint.X - padding, clashPoint.Y - padding, clashPoint.Z - padding),
-                    new Point3D(clashPoint.X + padding, clashPoint.Y + padding, clashPoint.Z + padding)
-                );
-
-                vp = doc.CurrentViewpoint.ToViewpoint();
-                vp.ZoomBox(tightBox);
-                doc.CurrentViewpoint.CopyFrom(vp);
-                System.Windows.Forms.Application.DoEvents();
+                comState.ZoomInCurViewOnCurSel();
             }
-            catch
-            {
-                // Fallback: Try COM API zoom
-                if (comState != null)
-                {
-                    try
-                    {
-                        comState.ZoomInCurViewOnCurSel();
-                        System.Windows.Forms.Application.DoEvents();
-                    }
-                    catch { }
-                }
-            }
+            catch { }
         }
 
         public static void SaveViewpoint(Document doc, GroupItem folder, string name)

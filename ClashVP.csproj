@@ -81,9 +81,14 @@
     <Compile Include="ClashToVP.cs">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Compile>
+    <Compile Include="Dlls\ClashToVP.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="Dlls\ClashVP.dll" />
+    <Content Include="Dlls\ClashVP.pdb" />
+    <Content Include="Dlls\PluginIcon16.png" />
+    <Content Include="Dlls\PluginIcon32.png" />
     <Content Include="PluginIcon16.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
@@ -91,9 +96,7 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
-  <ItemGroup>
-    <Folder Include="Dlls\" />
-  </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
     <PostBuildEvent>xcopy "$(TargetDir)$(TargetName).dll" "%25AppData%25\Autodesk\Navisworks Manage 2024\Plugins\$(TargetName)\" /Y
