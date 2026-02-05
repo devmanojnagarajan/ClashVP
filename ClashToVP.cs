@@ -195,7 +195,7 @@ namespace ClashToVP
 
             // STEP 5: Save the viewpoint
             DebugLog("  -> Saving viewpoint...");
-            ClashHelper.SaveViewpoint(doc, folder, "Clash " + index + " - " + result.DisplayName);
+            ClashHelper.SaveViewpoint(doc, folder, result.DisplayName);
 
             // Reset for next clash
             DebugLog("  -> Resetting for next...");
